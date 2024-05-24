@@ -36,7 +36,8 @@
   #+(not (or linux android)) "")
 
 (defun local-arch ()
-  (string+ (local-cpu) (local-vendor) (local-os) (local-environment)))
+  "wasm32-unknown-emscripten"
+  #+nil (string+ (local-cpu) (local-vendor) (local-os) (local-environment)))
 
 (defparameter *known-arches*
   '("i686-pc-linux-gnu"

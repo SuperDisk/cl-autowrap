@@ -20,7 +20,7 @@
     (define-foreign-type 'int64 (aval 8 unsigned))
     (define-foreign-type 'uint64 (aval 8 unsigned))
     #+x86-64
-    (define-foreign-type 'size-t 'uint64)
+    (define-foreign-type 'size-t 'uint32)
     #+x86
     (define-foreign-type 'size-t 'uint32)
     #+arm

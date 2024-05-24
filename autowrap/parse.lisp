@@ -359,9 +359,16 @@ Return the appropriate CFFI name."))
         collect (parse-form form (aval :tag form)) into forms
         finally (return (remove-if #'null forms))))
 
+(defun make-define-list2 (def-symbol list package)
+ (loop for x in (reverse list)
+       append (list
+               `(cl:format cl:t "wrapping ~a~%" '(,def-symbol ,x ,package))
+               `(,def-symbol ,x ,package))))
 (defun make-define-list (def-symbol list package)
  (loop for x in (reverse list)
-       collect `(,def-symbol ,x ,package)))
+       append (list
+               #+nil`(cl:format cl:t "wrapping ~a~%" '(,def-symbol ,x ,package))
+               `(,def-symbol ,x ,package))))
 
 (defun make-export-list (list package &optional sym-fun)
   `(export '(,@(mapcar (or sym-fun
@@ -437,56 +444,58 @@ Return the appropriate CFFI name."))
                              :version version))
       (with-open-file (in-spec spec-name)
         (collecting-symbols
-          `(progn
-             (eval-when (:compile-toplevel :load-toplevel :execute)
-               (setf *failed-wraps* nil)
-               (setf *mute-reporting-p* ,release-p)
-               ,@(when constant-accessor
-                   (make-constant-accessor constant-accessor constant-name-value-map))
-               ;; Read and parse the JSON
-               ;;
-               ;; Note that SBCL seems to have issues with this not
-               ;; being a toplevel form as of 1.1.9 and will crash.
-               #-sbcl
-               (with-anonymous-indexing
-                 ,@(read-parse-forms in-spec exclude-definitions exclude-sources
-                                     include-definitions include-sources))
-               #+sbcl
-               (progn
-                 (setf *foreign-record-index* (make-hash-table))
-                 ,@(read-parse-forms in-spec exclude-definitions exclude-sources
-                                     include-definitions include-sources)
-                 (setf *foreign-record-index* nil))
-               ;; Map constants
-               ,@(when constant-accessor
-                   `((setf ,constant-name-value-map
-                           (make-hash-table :test 'equal :size ,(length *foreign-constant-list*)))
-                     (loop for (name . value) in ',*foreign-raw-constant-list*
-                           do (setf (gethash name ,constant-name-value-map) value))))
-               ;; Definitions
-               ,@(make-define-list 'define-wrapper *foreign-record-list* wrapper-package)
-               ,@(make-define-list 'define-wrapper *foreign-alias-list* wrapper-package)
-               ,@(unless no-accessors
-                   (make-define-list 'define-accessors *foreign-record-list* accessor-package))
-               ,@(unless no-functions
-                   (make-define-list 'define-cfun *foreign-function-list* function-package))
-               ,@(make-define-list 'define-cextern *foreign-extern-list* extern-package)
-               ;; Report on anything missing
-               (compile-time-report-wrap-failures)
-               ;; Exports
-               ,(when *foreign-record-list*
-                  (make-export-list *foreign-record-list* *package*
-                                    (lambda (x) (etypecase x (symbol x) (cons (caadr x))))))
-               ,(when *foreign-function-list*
-                  (make-export-list *foreign-function-list* function-package))
-               ,(when *foreign-extern-list*
-                  (make-export-list *foreign-extern-list* extern-package))
-               ,(when *foreign-constant-list*
-                  (make-export-list *foreign-constant-list* constant-package))
-               ,(when *foreign-other-exports-list*
-                  `(export ',*foreign-other-exports-list* ,definition-package))
-               (setf *mute-reporting-p* ,old-mute-reporting))
-             (let ((*mute-reporting-p* ,release-p))
-               (eval-when (:load-toplevel :execute)
-                 (report-wrap-failures 'load-time *standard-output*)
-                 (clear-wrap-failures)))))))))
+          (prog1
+              `(progn
+                 (eval-when (:compile-toplevel :load-toplevel :execute)
+                   (setf *failed-wraps* nil)
+                   (setf *mute-reporting-p* ,release-p)
+                   ,@(when constant-accessor
+                       (make-constant-accessor constant-accessor constant-name-value-map))
+                   ;; Read and parse the JSON
+                   ;;
+                   ;; Note that SBCL seems to have issues with this not
+                   ;; being a toplevel form as of 1.1.9 and will crash.
+                   #-sbcl
+                   (with-anonymous-indexing
+                     ,@(read-parse-forms in-spec exclude-definitions exclude-sources
+                                         include-definitions include-sources))
+                   #+sbcl
+                   (progn
+                     (setf *foreign-record-index* (make-hash-table))
+                     ,@(read-parse-forms in-spec exclude-definitions exclude-sources
+                                         include-definitions include-sources)
+                     (setf *foreign-record-index* nil))
+                   ;; Map constants
+                   ,@(when constant-accessor
+                       `((setf ,constant-name-value-map
+                               (make-hash-table :test 'equal :size ,(length *foreign-constant-list*)))
+                         (loop for (name . value) in ',*foreign-raw-constant-list*
+                               do (setf (gethash name ,constant-name-value-map) value))))
+                   ;; Definitions
+                   ,@(make-define-list2 'define-wrapper *foreign-record-list* wrapper-package)
+                   ,@(make-define-list2 'define-wrapper *foreign-alias-list* wrapper-package)
+                   ,@(unless no-accessors
+                       (make-define-list 'define-accessors *foreign-record-list* accessor-package))
+                   ,@(unless no-functions
+                       (make-define-list 'define-cfun *foreign-function-list* function-package))
+                   ,@(make-define-list 'define-cextern *foreign-extern-list* extern-package)
+                   ;; Report on anything missing
+                   (compile-time-report-wrap-failures)
+                   ;; Exports
+                   ,(when *foreign-record-list*
+                      (make-export-list *foreign-record-list* *package*
+                                        (lambda (x) (etypecase x (symbol x) (cons (caadr x))))))
+                   ,(when *foreign-function-list*
+                      (make-export-list *foreign-function-list* function-package))
+                   ,(when *foreign-extern-list*
+                      (make-export-list *foreign-extern-list* extern-package))
+                   ,(when *foreign-constant-list*
+                      (make-export-list *foreign-constant-list* constant-package))
+                   ,(when *foreign-other-exports-list*
+                      `(export ',*foreign-other-exports-list* ,definition-package))
+                   (setf *mute-reporting-p* ,old-mute-reporting))
+                 (let ((*mute-reporting-p* ,release-p))
+                   (eval-when (:load-toplevel :execute)
+                     (report-wrap-failures 'load-time *standard-output*)
+                     (clear-wrap-failures))))
+            (setf *done* nil)))))))

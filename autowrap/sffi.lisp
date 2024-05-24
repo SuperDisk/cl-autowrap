@@ -215,7 +215,7 @@
 
 (defmethod foreign-scalar-p ((type foreign-record))
   (when (eq :union (foreign-type type))
-       (every #'foreign-scalar-p (foreign-record-fields type))))
+    (every #'foreign-scalar-p (foreign-record-fields type))))
 
 (defmethod foreign-scalar-p ((type list))
   (let ((specifier (car type)))
@@ -380,24 +380,24 @@ call it.  "
                                  :variadic-p variadic-p)))
         (setf (foreign-record-fields fun)
               (loop for param in params
-                 collect (make-instance 'foreign-field :name (car param)
-                                        :type (ensure-type (cadr param) "function ~S (nee ~S) due to parameter ~S of type ~S"
-                                                           name c-symbol (car param) (cadr param)))))
+                    collect (make-instance 'foreign-field :name (car param)
+                                                          :type (ensure-type (cadr param) "function ~S (nee ~S) due to parameter ~S of type ~S"
+                                                                             name c-symbol (car param) (cadr param)))))
         (setf (gethash name *foreign-functions*) fun)))))
 
 (defun parse-one-field (record-type record-type-name pre-offset
                         name type &key bitfield-p bit-size bit-offset bit-alignment
-                        bit-width)
+                                    bit-width)
   (handler-case
       (make-instance 'foreign-record-field
-        :name name
-        :type (ensure-type type "record ~(~S~) ~S field ~S of type ~S"
-                           record-type record-type-name name type)
-        :bitfield-p bitfield-p
-        :bit-size bit-size
-        :bit-offset (+ pre-offset bit-offset)
-        :bit-alignment bit-alignment
-        :bit-width bit-width)
+                     :name name
+                     :type (ensure-type type "record ~(~S~) ~S field ~S of type ~S"
+                                        record-type record-type-name name type)
+                     :bitfield-p bitfield-p
+                     :bit-size bit-size
+                     :bit-offset (+ pre-offset bit-offset)
+                     :bit-alignment bit-alignment
+                     :bit-width bit-width)
     (undefined-foreign-type (e)
       (unless *mute-reporting-p*
         (format *error-output* "~@<; ~@;~A~:@>~%" e))
@@ -748,8 +748,8 @@ types."
     (let* ((*package* package)
            (extern (find-extern name))
            (ptr-or-error
-            `(or (cffi-sys:%foreign-symbol-pointer ,(foreign-symbol-c-symbol extern) :default)
-                 (error "Foreign extern symbol not found: ~S" ',name))))
+             `(or (cffi-sys:%foreign-symbol-pointer ,(foreign-symbol-c-symbol extern) :default)
+                  (error "Foreign extern symbol not found: ~S" ',name))))
       (if (foreign-scalar-p (foreign-type extern))
           `(define-symbol-macro ,name
                (cffi-sys:%mem-ref ,ptr-or-error
@@ -985,6 +985,8 @@ types."
          (name (foreign-type-name type)))
     `(define-wrapper* ,type ,name)))
 
+(defparameter *done* nil)
+
 (defmacro define-wrapper* (type wrapper-name &key constructor conc-name)
   (with-wrap-attempt ("lisp structure for foreign structure ~S" type) type
     (let* ((type (etypecase type
@@ -997,8 +999,8 @@ types."
            ;;
            ;; Thus in this case we make an exception and define x* for
            ;; the alias
-           (existing (find-class (foreign-type-name type) nil))
-           (star-p (and existing (typep type 'foreign-pointer)))
+           ;; (existing (find-class (foreign-type-name type) nil))
+           ;; (star-p (and existing (typep type 'foreign-pointer)))
            ;; FIXME: These should be given a separate name, but this has
            ;; to be deduced _everywhere_.
            (constructor-name
@@ -1008,18 +1010,23 @@ types."
            (conc-name
              (or conc-name
                  (string+ wrapper-name "-"))))
-      (when (or (not existing) star-p)
-        `(progn
-           (setf (gethash ',(foreign-type-name type) *wrapper-constructors*)
-                 ',constructor-name)
-           (defstruct (,wrapper-name
-                       (:constructor ,constructor-name)
-                       (:conc-name ,conc-name)
-                       (:include ,(if (or (keywordp (foreign-type type))
-                                          (anonymous-p (foreign-type type))
-                                          (null (foreign-type-name (foreign-type type))))
-                                      'wrapper
-                                      (foreign-type-name (foreign-type type)))))))))))
+      (if (not (member (foreign-type-name type) *done* :test #'equalp)) ;(or (not existing) star-p)
+          (progn
+            (push (foreign-type-name type) *done*)
+            `(progn
+               (format t "CREATING WRAPPER CONSTRUCTOR ~a~%" ',(foreign-type-name type))
+               (setf (gethash ',(foreign-type-name type) *wrapper-constructors*)
+                     ',constructor-name)
+               (defstruct (,wrapper-name
+                           (:constructor ,constructor-name)
+                           (:conc-name ,conc-name)
+                           (:include ,(if (or (keywordp (foreign-type type))
+                                              (anonymous-p (foreign-type type))
+                                              (null (foreign-type-name (foreign-type type))))
+                                          'wrapper
+                                          (foreign-type-name (foreign-type type))))))))
+          `(format t "NOT CREATING WRAPPER CONSTRUCTOR ~a~%"
+                   ',(foreign-type-name type))))))
 
 
  ;; Functions
